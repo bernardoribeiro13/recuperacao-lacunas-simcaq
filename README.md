@@ -6,7 +6,7 @@ Refaz na API do SimCAQ (`simcaq.c3sl.ufpr.br`) os municípios cujo arquivo **nã
 | API respondeu | Status no log | O que acontece |
 |---|---|---|
 | 200 com dados | `CAPTURADO` | arquivo gravado |
-| 200 com `[]` | `CAPTURADO_VAZIO` | arquivo gravado (o dataset já guarda vazios assim) |
+| 200 com `[]` | `CAPTURADO_VAZIO` | **não grava** (não há dado a guardar); só registra no log. `--gravar-vazios` grava o arquivo com `result: []` |
 | 400 / 404 | `ERRO_HTTP_4XX` | não grava; vai para o log, sem nova tentativa |
 | 500 / timeout / rede | `ERRO_HTTP_5XX` / `ERRO_REDE` | 4 tentativas com espera crescente; se persistir, não grava e vai para o log |
 

@@ -9,7 +9,8 @@ Fluxo:
 
 O que faz com cada municipio ausente:
   HTTP 200 com dados   -> CAPTURADO        grava no dataset e na pasta nova
-  HTTP 200 com []      -> CAPTURADO_VAZIO  grava no dataset e na pasta nova (como o dataset ja guarda os vazios)
+  HTTP 200 com []      -> CAPTURADO_VAZIO  NAO grava (nao ha dado a guardar); so registra no log
+                                           (use --gravar-vazios para gravar o arquivo com result [])
   HTTP 4xx             -> ERRO_HTTP_4XX    nao grava; vai para o log (sem nova tentativa, exceto 408/429)
   HTTP 5xx             -> ERRO_HTTP_5XX    nao grava; vai para o log (depois de varias tentativas)
   timeout / rede       -> ERRO_REDE        nao grava; vai para o log (depois de varias tentativas)
@@ -332,7 +333,9 @@ def cmd_executar(args):
             if status == "ERRO_REDE" and parar.is_set() and tentativas == 0:
                 return  # interrompido antes de tentar: nao registra, fica pendente
             dest_ds = dest_nv = obs = None
-            if result is not None and not (status == "CAPTURADO_VAZIO" and args.nao_gravar_vazios):
+            if status == "CAPTURADO_VAZIO" and not args.gravar_vazios:
+                obs = "API respondeu []; arquivo nao gravado"
+            elif result is not None:
                 meta["extracted_at"] = agora()
                 texto = montar_texto(meta, result)
                 rel = it["rel"].split("/")
@@ -423,7 +426,8 @@ def main():
     ex.add_argument("--amostra", type=int, help="processa N lacunas sorteadas (teste)")
     ex.add_argument("--limite", type=int, help="processa so as N primeiras")
     ex.add_argument("--sem-dataset", action="store_true", help="grava somente na pasta nova")
-    ex.add_argument("--nao-gravar-vazios", action="store_true", help="resposta 200 com [] so vai para o log")
+    ex.add_argument("--gravar-vazios", action="store_true",
+                    help="grava tambem o arquivo quando a API responde 200 com [] (padrao: so registra no log)")
     ex.add_argument("--repetir-erros", action="store_true", help="tenta de novo o que o log marcou como erro")
     ex.add_argument("--dry-run", action="store_true")
     ex.add_argument("--api-base", help="troca esquema+host das URLs (ex.: http://127.0.0.1:8000, para testes)")
