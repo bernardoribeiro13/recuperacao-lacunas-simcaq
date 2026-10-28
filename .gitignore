@@ -1,0 +1,6 @@
+saida/
+artefatos/
+consolidado/
+logs_recuperacao/
+__pycache__/
+*.tmp
