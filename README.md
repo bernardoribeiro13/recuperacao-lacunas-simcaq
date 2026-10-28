@@ -1,59 +1,43 @@
-# Recuperação de lacunas — microdados educacionais do Piauí (SimCAQ)
+# Refazer os arquivos vazios dos datasets educacionais do Piauí (SimCAQ)
 
-Refaz na API do SimCAQ (`simcaq.c3sl.ufpr.br`) os municípios cujo arquivo **não existe** no dataset de microdados
-(a raspagem original não gravou nada para eles). Para cada município o resultado é um destes:
+Alguns arquivos dos datasets `dados_educacionais_basicos` e `dados_educacionais_basicos_microdados` estão com
+`"result": []`. Este repositório **refaz a requisição de cada um** (a URL já está no `meta` do arquivo) para saber se
+o vazio é real ou foi falha da raspagem. Só os arquivos que já existem vazios entram; nada é inventado.
 
-| API respondeu | Status no log | O que acontece |
+| A API respondeu | Status no log | O que acontece |
 |---|---|---|
-| 200 com dados | `CAPTURADO` | arquivo gravado |
-| 200 com `[]` | `CAPTURADO_VAZIO` | **não grava** (não há dado a guardar); só registra no log. `--gravar-vazios` grava o arquivo com `result: []` |
-| 400 / 404 | `ERRO_HTTP_4XX` | não grava; vai para o log, sem nova tentativa |
-| 500 / timeout / rede | `ERRO_HTTP_5XX` / `ERRO_REDE` | 4 tentativas com espera crescente; se persistir, não grava e vai para o log |
+| 200 com dados | `RECUPERADO` | salvo na pasta nova, na mesma organização e nomenclatura do dataset |
+| 200 com `[]` | `CONTINUA_VAZIO` | não grava; a API confirma que não há dado |
+| 400 / 404 | `ERRO_HTTP_4XX` | não grava; código no log, sem nova tentativa |
+| 500 / timeout / rede | `ERRO_HTTP_5XX` / `ERRO_REDE` | 4 tentativas com espera crescente; se persistir, código no log |
 
-Um 5xx no log significa "falhou depois das tentativas", não prova de que o dado não existe.
+O plano está em `plano/plano_vazios.json` (8.272 vazios na básica, 26.090 na microdados; `auxiliares` por último).
 
-## Rodar no GitHub
+## Rodar
 
-**Actions → Recuperar lacunas → Run workflow.** O plano (`plano/plano_lacunas.json`) é dividido em fatias; cada fatia é um job.
+**Actions → Refazer vazios → Run workflow.** Padrão: 6 fatias, um job por vez, 8 threads, 2 req/s (~5 h no total).
+Se 25 falhas 5xx/rede seguidas ocorrerem, a fatia para sozinha.
 
-| Entrada | Padrão | Para quê |
-|---|---|---|
-| `shards` | 24 | número de fatias (jobs) |
-| `max_parallel` | 3 | jobs simultâneos. Carga na API ≈ `max_parallel` × `max_por_seg` req/s |
-| `workers` / `max_por_seg` | 4 / 2 | threads e teto de req/s por job |
-| `amostra` | 0 | teste: só N requisições por fatia (0 = tudo) |
+## Resultado (artefato `vazios-consolidado`)
 
-Se 25 falhas 5xx/rede seguidas ocorrerem, a fatia para sozinha para não sobrecarregar a API.
-
-## Resultado
-
-Ao final, o artefato **`recuperados-consolidado`** (guardado 30 dias) contém:
-
-- `recuperados.tar.gz` — os arquivos novos, na mesma organização e nomenclatura do dataset
-- `capturados_com_dados.csv`, `vazios_confirmados_pela_api.csv`, `falhas_http_nao_capturados.csv` (separador `;`)
-- `log_requisicoes.jsonl` — uma linha por município (status, HTTP, tentativas, URL, erro)
-- `plano_proxima_rodada.json` — o que ainda falta (falhas e o que não chegou a rodar)
-- `resumo.md` — contagens (também aparece na página da execução)
+- `recuperados_com_dados.csv` — o que tinha `[]` e agora veio com dado, com base, categoria, fase, ano e **cruzamento**
+- `continua_vazio_na_api.csv` — a API respondeu 200 com `[]`: vazio real
+- `erros_http.csv` — código HTTP, tentativas e trecho da resposta
+- `resumo_por_cruzamento.csv` — por cruzamento: quantos foram refeitos, recuperados, continuam vazios, erros
+- `log_vazios.jsonl` — um registro por arquivo; `resumo.md`; `plano_proxima_rodada.json` (erros e o que não rodou)
+- `recuperados.tar.gz` — os arquivos novos
 
 ## Aplicar no dataset local
 
 ```
-python recuperacao_lacunas\aplicar_recuperados.py caminho\recuperados.tar.gz
+python refazer_vazios.py aplicar caminho\recuperados.tar.gz
 ```
 
-Copia cada arquivo para o dataset e para a pasta `dados_educacionais_basicos_microdados_recuperados`, sem sobrescrever nada.
-Use `--dry-run` para só contar.
-
-## Próxima rodada (falhas)
-
-Substitua `plano/plano_lacunas.json` pelo `plano_proxima_rodada.json` do artefato, faça commit e rode o workflow de novo.
-Alternativa: regenerar o plano a partir do dataset local com `python refazer_lacunas.py planejar`.
+Troca o arquivo vazio pelo recuperado. **Nunca sobrescreve um arquivo que já tem dado.** `--dry-run` só conta.
+(Use `--raiz-basicos` / `--raiz-microdados` se os datasets não estiverem ao lado do script.)
 
 ## Arquivos
 
-- `refazer_lacunas.py` — `planejar`, `executar`, `relatorio` (só biblioteca padrão)
-- `consolidar.py` — junta logs e gera pacote/relatórios dos shards
-- `aplicar_recuperados.py` — aplica o pacote ao dataset local
-- `dados/_municipios_piaui.json` — 224 municípios (códigos IBGE e nomes dos arquivos)
-- `plano/plano_lacunas.json` — lacunas a requisitar (gerado do dataset local)
-- `.github/workflows/recuperar.yml`
+- `refazer_vazios.py` — `planejar`, `executar`, `relatorio`, `consolidar`, `aplicar` (só biblioteca padrão)
+- `refazer_lacunas.py` — motor de requisição reaproveitado (tentativas, limite de taxa, formato do arquivo)
+- `dados/_municipios_piaui.json` — 224 municípios

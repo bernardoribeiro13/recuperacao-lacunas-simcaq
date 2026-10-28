@@ -1,8 +1,7 @@
-name: Recuperar lacunas
+name: Refazer vazios
 
-# Refaz na API do SimCAQ os municipios que faltam no dataset de microdados.
-# O plano (plano/plano_lacunas.json) e dividido em fatias; cada fatia e um job.
-# Resultado: artefato "recuperados-consolidado" (recuperados.tar.gz + logs + CSVs).
+# Refaz a requisicao de cada arquivo que esta vazio ("result": []) nos datasets basicos e microdados.
+# Plano: plano/plano_vazios.json. Resultado: artefato "vazios-consolidado".
 
 on:
   workflow_dispatch:
@@ -10,20 +9,20 @@ on:
       shards:
         description: "Em quantas fatias dividir o plano (1 job por fatia)"
         type: number
-        default: 24
+        default: 6
       max_parallel:
-        description: "Quantos jobs ao mesmo tempo (carga total na API = este valor x teto por job)"
+        description: "Jobs ao mesmo tempo (carga na API = este valor x teto por job)"
         type: number
-        default: 3
+        default: 1
       workers:
         description: "Threads por job"
         type: number
-        default: 4
+        default: 8
       max_por_seg:
         description: "Teto de requisicoes por segundo, por job"
         type: number
         default: 2
-      amostra:
+      limite:
         description: "Teste: so N requisicoes por fatia (0 = tudo)"
         type: number
         default: 0
@@ -32,7 +31,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: recuperar-lacunas
+  group: refazer-vazios
   cancel-in-progress: false
 
 jobs:
@@ -47,7 +46,7 @@ jobs:
         run: |
           python3 -c "import json,os; print('shards=' + json.dumps(list(range(int(float(os.environ['N']))))))" >> "$GITHUB_OUTPUT"
 
-  recuperar:
+  refazer:
     needs: preparar
     runs-on: ubuntu-latest
     timeout-minutes: 350
@@ -59,20 +58,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Executar fatia ${{ matrix.shard }}
+      - name: Refazer fatia
         env:
           SHARD: ${{ matrix.shard }}
           SHARDS: ${{ inputs.shards }}
           WORKERS: ${{ inputs.workers }}
           MAX_POR_SEG: ${{ inputs.max_por_seg }}
-          AMOSTRA: ${{ inputs.amostra }}
+          LIMITE: ${{ inputs.limite }}
         run: |
           EXTRA=""
-          if [ "$AMOSTRA" != "0" ]; then EXTRA="--amostra $AMOSTRA"; fi
-          python3 refazer_lacunas.py executar \
-            --plano plano/plano_lacunas.json \
+          if [ "$LIMITE" != "0" ]; then EXTRA="--limite $LIMITE"; fi
+          python3 refazer_vazios.py executar \
+            --plano plano/plano_vazios.json \
             --municipios dados/_municipios_piaui.json \
-            --raiz /nao-existe --sem-dataset \
             --nova saida/nova \
             --logs "saida/logs/shard-$SHARD" \
             --shard "$SHARD" --shards "$SHARDS" \
@@ -82,13 +80,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: recuperados-${{ matrix.shard }}
+          name: vazios-${{ matrix.shard }}
           path: saida/
           if-no-files-found: ignore
           retention-days: 3
 
   consolidar:
-    needs: recuperar
+    needs: refazer
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -96,16 +94,16 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: recuperados-*
+          pattern: vazios-*
           path: artefatos
           merge-multiple: true
 
-      - name: Consolidar logs, relatorios e pacote
-        run: python3 consolidar.py artefatos plano/plano_lacunas.json consolidado
+      - name: Consolidar
+        run: python3 refazer_vazios.py consolidar artefatos consolidado --plano plano/plano_vazios.json
 
       - uses: actions/upload-artifact@v4
         with:
-          name: recuperados-consolidado
+          name: vazios-consolidado
           path: consolidado/
           compression-level: 0
           retention-days: 30
