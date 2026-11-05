@@ -79,15 +79,17 @@ diagnóstico, que ficaram fora do escopo.
 
 ## Onde ver os resultados
 
-**Actions → Refazer vazios → run `40746741664` → Artifacts → `vazios-consolidado`**
-(o artefato expira em 27/11/2026; os números principais estão neste README).
+📄 **[docs/dados_nao_extraidos.md](docs/dados_nao_extraidos.md)** — o que continua sem dado, com os padrões observados
+(`auxiliares`: 1.024 pares município × ano; demais categorias: só Nazária em 2007 e 2008).
 
-- `resumo.md` — totais por base, categoria e fase
+📁 **[resultados/](resultados)** — cópia dos resultados no repositório:
+
+- `continua_vazio_na_api.csv` — a lista completa dos 34.362 arquivos (a API respondeu 200 com `[]`)
 - `resumo_por_cruzamento.csv` — por cruzamento: refeitos, recuperados, continuam vazios, erros
-- `continua_vazio_na_api.csv` — a API respondeu 200 com `[]`
-- `recuperados_com_dados.csv` e `erros_http.csv` — vazios nesta execução
-- `log_vazios.jsonl` — um registro por arquivo
-- `recuperados.tar.gz` — os arquivos novos (vazio nesta execução)
+- `resumo.md` — totais por base, categoria e fase
+
+O artefato bruto do workflow (com `log_vazios.jsonl`, uma linha por arquivo) fica em
+**Actions → Refazer vazios → run `40746741664` → Artifacts → `vazios-consolidado`** e expira em 27/11/2026.
 
 ## Rodar de novo
 
