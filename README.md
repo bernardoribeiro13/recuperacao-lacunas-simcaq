@@ -1,7 +1,7 @@
 # Verificação dos arquivos vazios — dados educacionais do Piauí (SimCAQ)
 
 > [!IMPORTANT]
-> **Conclusão:** dos **34.362** arquivos vazios refazidos, **nenhum** voltou com dado. A API respondeu normalmente
+> **Conclusão:** dos **34.362** arquivos vazios refeitos, **nenhum** voltou com dados novos. A API respondeu normalmente
 > (HTTP 200) com lista vazia nos 34.362 casos. **O vazio é real, não foi falha de coleta**, e os arquivos que já temos
 > estão corretos.
 
