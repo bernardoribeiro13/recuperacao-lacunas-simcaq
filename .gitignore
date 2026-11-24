@@ -1,4 +1,7 @@
 saida/
+zips/
+levantamento/
+*.zip
 artefatos/
 consolidado/
 logs_recuperacao/

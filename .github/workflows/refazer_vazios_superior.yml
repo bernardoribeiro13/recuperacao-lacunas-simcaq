@@ -1,0 +1,110 @@
+name: Refazer vazios (ensino superior)
+
+# Refaz a chamada de cada arquivo vazio ("result": []) de dados_educacionais_superior, usando exatamente a URL
+# gravada no meta do proprio arquivo. Plano: plano/plano_vazios_superior.json.gz.
+# Resultado: artefato "superior-consolidado".
+
+on:
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: "Em quantas fatias dividir o plano (1 job por fatia)"
+        type: number
+        default: 6
+      max_parallel:
+        description: "Jobs ao mesmo tempo (carga na API = este valor x teto por job)"
+        type: number
+        default: 1
+      workers:
+        description: "Threads por job"
+        type: number
+        default: 8
+      max_por_seg:
+        description: "Teto de requisicoes por segundo, por job"
+        type: number
+        default: 2
+      limite:
+        description: "Teste: so N requisicoes por fatia (0 = tudo)"
+        type: number
+        default: 0
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refazer-vazios
+  cancel-in-progress: false
+
+jobs:
+  preparar:
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.lista.outputs.shards }}
+    steps:
+      - id: lista
+        env:
+          N: ${{ inputs.shards }}
+        run: |
+          python3 -c "import json,os; print('shards=' + json.dumps(list(range(int(float(os.environ['N']))))))" >> "$GITHUB_OUTPUT"
+
+  refazer:
+    needs: preparar
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.max_parallel) }}
+      matrix:
+        shard: ${{ fromJSON(needs.preparar.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refazer fatia
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ inputs.shards }}
+          WORKERS: ${{ inputs.workers }}
+          MAX_POR_SEG: ${{ inputs.max_por_seg }}
+          LIMITE: ${{ inputs.limite }}
+        run: |
+          EXTRA=""
+          if [ "$LIMITE" != "0" ]; then EXTRA="--limite $LIMITE"; fi
+          python3 refazer_vazios.py executar \
+            --plano plano/plano_vazios_superior.json.gz \
+            --municipios dados/_municipios_piaui.json \
+            --nova saida/nova \
+            --logs "saida/logs/shard-$SHARD" \
+            --shard "$SHARD" --shards "$SHARDS" \
+            --workers "$WORKERS" --max-por-seg "$MAX_POR_SEG" \
+            --max-minutos 330 $EXTRA
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: superior-${{ matrix.shard }}
+          path: saida/
+          if-no-files-found: ignore
+          retention-days: 3
+
+  consolidar:
+    needs: refazer
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: superior-*
+          path: artefatos
+          merge-multiple: true
+
+      - name: Consolidar
+        run: python3 refazer_vazios.py consolidar artefatos consolidado --plano plano/plano_vazios_superior.json.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: superior-consolidado
+          path: consolidado/
+          compression-level: 0
+          retention-days: 30

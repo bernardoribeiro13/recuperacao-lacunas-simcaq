@@ -18,6 +18,7 @@ Usa o motor de requisicao de refazer_lacunas.py. Somente biblioteca padrao.
 import argparse
 import csv
 import glob
+import gzip
 import json
 import os
 import queue
@@ -131,6 +132,20 @@ def cmd_planejar(args):
         print(f"ATENCAO: {len(ilegiveis)} pastas sem arquivo-modelo legivel (ignoradas)")
 
 
+# ---------------------------------------------------------------- plano
+def ler_plano(caminho):
+    """Le o plano (.json ou .json.gz)."""
+    with (gzip.open(caminho, "rt", encoding="utf-8") if caminho.endswith(".gz") else
+          open(caminho, encoding="utf-8")) as f:
+        return json.load(f)
+
+
+def url_do_item(pasta, cod):
+    """A URL gravada no proprio arquivo vazio, quando o plano a traz ("urls"); senao, a do modelo com o municipio."""
+    url = pasta.get("urls", {}).get(str(cod))
+    return url or rl.RE_CITY.sub(f'city:"{cod}"', pasta["meta_modelo"]["url"])
+
+
 # ---------------------------------------------------------------- log
 def carregar_log(caminho):
     ultimo = {}
@@ -170,7 +185,7 @@ def cmd_executar(args):
     arq_plano = args.plano or os.path.join(args.logs, "plano_vazios.json")
     if not os.path.exists(arq_plano):
         sys.exit(f"plano nao encontrado ({arq_plano}); rode: python refazer_vazios.py planejar")
-    plano = json.load(open(arq_plano, encoding="utf-8"))
+    plano = ler_plano(arq_plano)
     arq_log = os.path.join(args.logs, "log_vazios.jsonl")
     ja = carregar_log(arq_log)
     itens, no_log = [], 0
@@ -181,7 +196,8 @@ def cmd_executar(args):
                 no_log += 1
                 continue
             itens.append({"base": p["base"], "rel": p["rel"], "cod": cod, "municipio": M[cod],
-                          "arquivo": rl.nome_arquivo(cod, M[cod]), "modelo": p["meta_modelo"]})
+                          "arquivo": rl.nome_arquivo(cod, M[cod]), "modelo": p["meta_modelo"],
+                          "url": url_do_item(p, cod)})
     print(f"vazios a refazer: {len(itens)}   (ja registrados no log: {no_log})")
     if args.shards > 1:
         itens = itens[args.shard::args.shards]
@@ -234,7 +250,7 @@ def cmd_executar(args):
                 return
             meta = dict(it["modelo"])
             meta["city_id"] = it["cod"]
-            meta["url"] = rl.RE_CITY.sub(f'city:"{it["cod"]}"', it["modelo"]["url"])
+            meta["url"] = it["url"]
             t1 = time.monotonic()
             status, http_, tent, result, erro = rl.buscar(meta["url"], args, limitador, parar)
             if status == "ERRO_REDE" and parar.is_set() and tent == 0:
@@ -245,8 +261,9 @@ def cmd_executar(args):
                 meta["extracted_at"] = rl.agora()
                 texto = rl.montar_texto(meta, result)
                 rel = it["rel"].split("/")
-                if rl.gravar_exclusivo(os.path.join(args.nova, BASES[it["base"]], *rel, it["arquivo"]), texto):
-                    dest_nv = "/".join([BASES[it["base"]]] + rel + [it["arquivo"]])
+                pasta_base = BASES.get(it["base"], it["base"])  # conjuntos novos: o nome da base ja e o do dataset
+                if rl.gravar_exclusivo(os.path.join(args.nova, pasta_base, *rel, it["arquivo"]), texto):
+                    dest_nv = "/".join([pasta_base] + rel + [it["arquivo"]])
                 if args.gravar_no_dataset:
                     acao = substituir_vazio(os.path.join(raizes[it["base"]], *rel, it["arquivo"]), texto)
                     dest_ds = acao
@@ -338,14 +355,19 @@ def cmd_consolidar(args):
     if n:
         cmd_relatorio(argparse.Namespace(logs=args.saida))
     ultimo = carregar_log(log_unico)
-    plano = json.load(open(args.plano, encoding="utf-8"))
+    plano = ler_plano(args.plano)
     pendentes, total = [], 0
     for p in plano["pastas"]:
         total += len(p["vazios"])
         resta = [c for c in p["vazios"] if (ultimo.get((p["base"], p["rel"], c)) or {}).get("status") not in DONE]
         if resta:
-            pendentes.append({**p, "vazios": resta})
-    with open(os.path.join(args.saida, "plano_proxima_rodada.json"), "w", encoding="utf-8") as f:
+            novo = {**p, "vazios": resta}
+            if "urls" in p:
+                novo["urls"] = {str(c): p["urls"][str(c)] for c in resta}
+            pendentes.append(novo)
+    gz = args.plano.endswith(".gz")
+    destino = os.path.join(args.saida, "plano_proxima_rodada.json" + (".gz" if gz else ""))
+    with (gzip.open(destino, "wt", encoding="utf-8") if gz else open(destino, "w", encoding="utf-8")) as f:
         json.dump({"gerado_em": rl.agora(), "pastas": pendentes}, f, ensure_ascii=False)
     nova = os.path.join(args.artefatos, "nova")
     n_arq = 0
@@ -382,7 +404,8 @@ def cmd_consolidar(args):
 
 # ---------------------------------------------------------------- aplicar (local)
 def cmd_aplicar(args):
-    raizes = {BASES["basicos"]: args.raiz_basicos, BASES["microdados"]: args.raiz_microdados}
+    raizes = {BASES["basicos"]: args.raiz_basicos, BASES["microdados"]: args.raiz_microdados,
+              "dados_educacionais_superior": args.raiz_superior}
 
     def arquivos():
         if os.path.isdir(args.pacote):
@@ -432,6 +455,8 @@ def main():
     pai = argparse.ArgumentParser(add_help=False)
     pai.add_argument("--raiz-basicos", default=achar(SUB_RAIZ["basicos"]))
     pai.add_argument("--raiz-microdados", default=achar(SUB_RAIZ["microdados"]))
+    pai.add_argument("--raiz-superior", default=achar(os.path.join("dados_educacionais_superior",
+                                                                   "dados_educacionais_superior")))
     pai.add_argument("--municipios", default=achar_municipios())
     pai.add_argument("--nova", default=os.path.join(AQUI, "recuperados_vazios"),
                      help="pasta nova: <nova>/<nome do dataset>/<mesma organizacao do dataset>")

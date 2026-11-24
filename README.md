@@ -105,6 +105,82 @@ python refazer_vazios.py aplicar caminho\recuperados.tar.gz
 Troca o arquivo vazio pelo recuperado e **nunca sobrescreve um arquivo que já tem dado**. `--dry-run` só conta.
 Use `--raiz-basicos` / `--raiz-microdados` se os datasets não estiverem ao lado do script.
 
+## Segunda etapa: dados de ensino superior
+
+A mesma verificação, agora em **outros conjuntos, de ensino superior**, coletados da mesma API (SimCAQ) para os
+municípios do Piauí. A primeira etapa (educação básica) já está concluída e **não é refeita**: aqui só roda o que
+ainda não foi feito.
+
+| Conjunto | Organização dos arquivos | Arquivos |
+|---|---|---:|
+| `dados_educacionais_superior` | `categoria/[fase/]ano/cruzamento/<ibge>_<MUNICIPIO>.json` | 119.840 |
+| `docentes_por_escola` | `<ibge>_<MUNICIPIO>/ano/dimensao/<ano>_<escola>.json` | 48.578 |
+| `docentes_por_escola_superior` | `<ibge>_<MUNICIPIO>/ano/dimensao/<ano>_<ibge>.json` | 7.168 |
+
+### O que o levantamento encontrou (24/11/2026)
+
+| Conjunto | Arquivos | Com dado | Vazios | % vazio | Vazios com URL no `meta` |
+|---|---:|---:|---:|---:|---:|
+| `dados_educacionais_superior` | 119.840 | 18.625 | **101.215** | 84,5% | 101.215 |
+| `docentes_por_escola` | 48.578 | 33.618 | **14.960** | 30,8% | 0 |
+| `docentes_por_escola_superior` | 7.168 | 408 | **6.760** | 94,3% | 0 |
+| **Total** | **175.586** | **52.651** | **122.935** | **70,0%** | **101.215** |
+
+Nenhum arquivo ilegível ou fora do formato.
+
+**Os vazios aparecem sempre no grupo inteiro.** Um *grupo* é o mesmo município × ano (× escola, em
+`docentes_por_escola`; × categoria e fase, em `dados_educacionais_superior`) em todos os seus cruzamentos. Quando um
+grupo tem vazio, **todos** os seus cruzamentos estão vazios:
+
+| Conjunto | Grupos com vazio | Grupo inteiro vazio | Só parte vazia |
+|---|---:|---:|---:|
+| `dados_educacionais_superior` | 10.122 | 10.122 | 0 |
+| `docentes_por_escola` | 7.480 | 7.480 | 0 |
+| `docentes_por_escola_superior` | 845 | 845 | 0 |
+
+As tabelas por categoria e por ano estão em [`resultados/superior/levantamento.md`](resultados/superior/levantamento.md).
+
+### Por que a reexecução foi para o CI
+
+Na primeira etapa, o levantamento foi local e só a reexecução rodou no GitHub Actions. Aqui o volume é bem maior:
+**cerca de 175 mil arquivos** e **122.935 vazios**, mais de três vezes os 34.362 da primeira etapa. Foram muitos para
+rodar como o outro rodou, então **julguei melhor levar o processo para o CI** e automatizá-lo, sem depender do
+computador local por horas:
+
+- **Levantamento: local.** Ler os 175 mil arquivos um a um no disco travou o computador. Lendo direto dos zips
+  (`levantar_vazios.py`), o mesmo levantamento leva segundos.
+- **Reexecução: no Actions.** São 101.215 chamadas. A 2 req/s, como na primeira etapa, isso dá cerca de 14 horas. O
+  workflow divide em fatias, retoma o que ficar pendente e para sozinho se a API começar a falhar.
+
+### Reexecução
+
+O objetivo é confirmar que **as chamadas que foram feitas** realmente devolvem vazio. Por isso, cada arquivo é refeito
+com **exatamente a URL gravada no `meta` do próprio arquivo**. Nenhuma URL é montada (as 101.215 do plano foram
+conferidas, uma a uma, contra os arquivos). Status, limites e pacote de saída são os mesmos da primeira etapa.
+
+| Conjunto | Vazios | Situação |
+|---|---:|---|
+| `dados_educacionais_superior` | 101.215 | no plano `plano/plano_vazios_superior.json.gz` |
+| `docentes_por_escola` | 14.960 | sem URL no `meta`: não há chamada registrada para refazer; ficam listados em `plano/vazios_docentes_por_escola.csv` |
+| `docentes_por_escola_superior` | 6.760 | sem URL no `meta`: idem, em `plano/vazios_docentes_por_escola_superior.csv` |
+
+**Para rodar:** Actions → **Refazer vazios (ensino superior)** → Run workflow. Padrão: 6 fatias, um job por vez,
+8 threads, 2 req/s. O resultado sai no artefato `superior-consolidado`. Para um teste curto antes, use `limite` = 20.
+
+> [!WARNING]
+> Em 24/11/2026, a API respondeu `HTTP 500` ("database error") a todas as requisições, inclusive a URLs que
+> funcionaram na coleta. Rode o teste curto antes da execução completa. Se a API continuar falhando, cada fatia para
+> sozinha depois de 25 falhas seguidas, e o que ficou pendente vai para `plano_proxima_rodada.json.gz`.
+
+Para aplicar os recuperados no dataset local: `python refazer_vazios.py aplicar caminho\recuperados.tar.gz`
+(use `--raiz-superior` se o dataset não estiver ao lado do script).
+
+Para refazer o levantamento:
+
+```
+python levantar_vazios.py levantamento dados_educacionais_superior.zip docentes_por_escola.zip docentes_por_escola_superior.zip
+```
+
 ## Arquivos
 
 - `refazer_vazios.py` — `planejar`, `executar`, `relatorio`, `consolidar`, `aplicar` (só biblioteca padrão)
@@ -112,3 +188,8 @@ Use `--raiz-basicos` / `--raiz-microdados` se os datasets não estiverem ao lado
 - `plano/plano_vazios.json` — a lista dos 34.362 arquivos vazios
 - `dados/_municipios_piaui.json` — os 224 municípios
 - `.github/workflows/refazer_vazios.yml` — o workflow
+- `levantar_vazios.py` — segunda etapa: levantamento dos vazios lendo direto dos zips
+- `plano/plano_vazios_superior.json.gz` — segunda etapa: os 101.215 vazios, com a URL gravada em cada arquivo
+- `plano/vazios_docentes_por_escola*.csv` — segunda etapa: os vazios dos conjuntos de docentes (sem URL no `meta`)
+- `resultados/superior/levantamento.md` — segunda etapa: o levantamento completo, por categoria e por ano
+- `.github/workflows/refazer_vazios_superior.yml` — segunda etapa: o workflow da reexecução
