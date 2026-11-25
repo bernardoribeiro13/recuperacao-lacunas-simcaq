@@ -181,6 +181,42 @@ Para refazer o levantamento:
 python levantar_vazios.py levantamento dados_educacionais_superior.zip docentes_por_escola.zip docentes_por_escola_superior.zip
 ```
 
+## Terceira etapa: indicadores macros e micros
+
+A mesma verificação no conjunto **`INDICADORES MACROS E MICROS`**: 15 indicadores, cada um com seus cruzamentos e um
+arquivo por ano (`indicador/cruzamento/<nome>_<ano>.json`), sem recorte por município.
+
+### O que o levantamento encontrou (25/11/2026)
+
+| Arquivos | Com dado | Vazios | % vazio | Vazios com URL no `meta` |
+|---:|---:|---:|---:|---:|
+| 2.594 | 1.922 | **672** | 25,9% | **0** |
+
+Nenhum arquivo ilegível ou fora do formato. Os vazios estão em 8 dos 15 indicadores, sempre em anos inteiros: em cada
+indicador × ano com vazio, **todos** os cruzamentos estão vazios (21 grupos inteiros, nenhum parcial).
+
+| Indicador | Vazios | Anos com vazio |
+|---|---:|---|
+| `dados_anos_estudo_2016_2024` | 360 | 2016, 2017, 2018 |
+| `dados_contagem_populacao` | 240 | 2020, 2021 |
+| `dados_fora_escola_2007_2015` | 21 | 2010 |
+| `dados_matricula_bruta_etapa_fixa_2007_2025` | 18 | 2010, 2016 a 2019, 2022 a 2025 |
+| `dados_populacao_fora_escola` | 14 | 2020, 2021 |
+| `dados_taxa_atendimento_2019_2024` | 12 | 2020, 2021 |
+| `dados_matricula_liquida_2007_2015` | 4 | 2010 |
+| `dados_taxa_atendimento_2004_2015` | 3 | 2010 |
+| **Total** | **672** | |
+
+Os demais 7 indicadores não têm nenhum vazio. As tabelas completas estão em
+[`resultados/indicadores/levantamento.md`](resultados/indicadores/levantamento.md), e a lista dos 672 arquivos em
+`plano/vazios_indicadores_macros_e_micros.csv`.
+
+### Reexecução
+
+Nenhum dos 2.594 arquivos deste conjunto tem `meta`: todos trazem só `{"result": [...]}`. Sem a URL gravada no arquivo,
+**não há chamada registrada para refazer**, e nenhuma URL é montada (mesmo critério dos conjuntos de docentes da
+segunda etapa). Os 672 vazios ficam listados.
+
 ## Arquivos
 
 - `refazer_vazios.py` — `planejar`, `executar`, `relatorio`, `consolidar`, `aplicar` (só biblioteca padrão)
@@ -193,3 +229,5 @@ python levantar_vazios.py levantamento dados_educacionais_superior.zip docentes_
 - `plano/vazios_docentes_por_escola*.csv` — segunda etapa: os vazios dos conjuntos de docentes (sem URL no `meta`)
 - `resultados/superior/levantamento.md` — segunda etapa: o levantamento completo, por categoria e por ano
 - `.github/workflows/refazer_vazios_superior.yml` — segunda etapa: o workflow da reexecução
+- `plano/vazios_indicadores_macros_e_micros.csv` — terceira etapa: os 672 vazios dos indicadores (sem `meta`)
+- `resultados/indicadores/levantamento.md` — terceira etapa: o levantamento completo, por indicador e por ano

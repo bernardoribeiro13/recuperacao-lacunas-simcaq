@@ -7,9 +7,11 @@ arquivo no disco, que era o que tornava o levantamento lento. A reexecucao fica 
 Uso:
   python levantar_vazios.py <pasta_saida> conjunto1.zip conjunto2.zip ...
 
-Cada zip (ou pasta) e um conjunto; o nome do conjunto e o nome do arquivo sem .zip. Dois layouts sao reconhecidos:
+Cada zip (ou pasta) e um conjunto; o nome do conjunto e o da pasta raiz dentro do zip (ou o do arquivo), em
+minusculas e sem espacos. Tres layouts sao reconhecidos:
   categoria/[fase/]ano/cruzamento/<ibge>_<MUNICIPIO>.json      (ex.: dados_educacionais_superior)
   <ibge>_<MUNICIPIO>/ano/dimensao/<ano>_<id>.json               (ex.: docentes_por_escola, docentes_por_escola_superior)
+  indicador/cruzamento/<nome>_<ano>.json                        (ex.: indicadores_macros_e_micros)
 
 Saida em <pasta_saida>:
   vazios_<conjunto>.csv          um arquivo vazio por linha
@@ -32,6 +34,7 @@ from collections import Counter, defaultdict
 
 RE_ANO = re.compile(r"^\d{4}$")
 RE_MUN = re.compile(r"^(\d{7})_(.+)$")
+RE_NOME_ANO = re.compile(r"^.+_(\d{4})$")
 LIMITE = 4096  # um arquivo com "result": [] tem so o meta (< 1 KB); acima disso tem dado e nem precisa ser lido
 
 
@@ -61,16 +64,22 @@ def entradas(fonte):
 
 
 def tirar_prefixo(itens):
-    """Remove pastas de cima que sao comuns a todos os arquivos (ex.: 'dados_educacionais_superior/')."""
+    """Remove pastas de cima que sao comuns a todos os arquivos (ex.: 'dados_educacionais_superior/').
+    Devolve (itens, nome da ultima pasta removida ou None)."""
+    pasta = None
     while True:
         primeiros = {p.split("/", 1)[0] for p, _, _ in itens}
         if len(primeiros) != 1 or any("/" not in p for p, _, _ in itens):
-            return itens
+            return itens, pasta
+        pasta = primeiros.pop()
         itens = [(p.split("/", 1)[1], t, f) for p, t, f in itens]
 
 
 def descrever(partes):
     """-> (layout, categoria, fase, ano, cruzamento, cod, municipio, escola) ou None se fora do padrao."""
+    if len(partes) == 3:  # indicador/cruzamento/<nome>_<ano>.json (sem municipio)
+        a = RE_NOME_ANO.match(partes[2][:-5])
+        return ("indicador", partes[0], "unica", a.group(1), partes[1], "", "", "") if a else None
     m = RE_MUN.match(partes[0])
     if m and len(partes) == 4:  # <ibge>_<MUN>/ano/dimensao/<ano>_<id>.json
         ident = partes[3][:-5].split("_", 1)[-1]
@@ -89,9 +98,11 @@ def descrever(partes):
 
 # ---------------------------------------------------------------- levantamento
 def levantar(fonte):
-    conjunto = os.path.basename(fonte.rstrip("/\\"))
+    itens, pasta = tirar_prefixo(list(entradas(fonte)))
+    # nome do conjunto: a pasta raiz de dentro do zip (ou o nome do arquivo), em minusculas e sem espacos
+    conjunto = pasta or os.path.basename(fonte.rstrip("/\\"))
     conjunto = conjunto[:-4] if conjunto.lower().endswith(".zip") else conjunto
-    itens = tirar_prefixo(list(entradas(fonte)))
+    conjunto = re.sub(r"\s+", "_", conjunto.strip()).lower()
     cont = Counter()
     vazios, problemas = [], []
     por_cat = defaultdict(Counter)    # (categoria, fase) -> arquivos/vazios
@@ -192,7 +203,8 @@ def resumo(rs, saida):
 
     md += ["", "### Padrão dos vazios", "",
            "Um *grupo* é o mesmo município × ano (× escola, em `docentes_por_escola`; × categoria e fase, em "
-           "`dados_educacionais_superior`) em todos os seus cruzamentos. Se o vazio pega o grupo **inteiro**, "
+           "`dados_educacionais_superior`) ou o mesmo indicador × ano (nos conjuntos sem município) "
+           "em todos os seus cruzamentos. Se o vazio pega o grupo **inteiro**, "
            "a indicação é de dado inexistente; se pega só **parte** dos cruzamentos, é mais cara de falha de coleta.",
            "", "| Conjunto | Grupos com vazio | Grupo inteiro vazio | Só parte vazia | Vazios em grupos parciais |",
            "|---|---:|---:|---:|---:|"]
